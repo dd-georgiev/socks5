@@ -1,0 +1,6 @@
+# BIND command
+socat --experimental - SOCKS5-LISTEN:127.0.0.1:1080:fake-server:10001
+
+socat --experimental - SOCKS5-LISTEN:127.0.0.1:1080:fake-server:8888
+
+socat udp-listen:8888,fork,bind=127.0.0.1,fork tcp:127.0.0.1:1080
