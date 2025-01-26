@@ -13,7 +13,7 @@ The goal of this exercise is to explore the protocol by monitoring the network t
 **** SOCKS5 commands
 In [[https://datatracker.ietf.org/doc/html/rfc1928][RFC1928]], the following commands are outlined:
 + CONNECT - This is the basic forwarding of TCP segments from the client to the server.
-+ BIND - The BIND command is used in scenarios, where the server will attempt to connect back to the client. A typical usage of BIND is for P2P network protocols or FTP([example case](https://stackoverflow.com/questions/25092819/when-should-an-ftp-server-connect-to-ftp-client-after-port-command).
++ BIND - The BIND command is used in scenarios, where the server will attempt to connect back to the client. A typical usage of BIND is for P2P network protocols or [[https://stackoverflow.com/questions/25092819/when-should-an-ftp-server-connect-to-ftp-client-after-port-command][FTP]]. The ~BIND~ command is send after ~CONNECT~ command
 + UDP_ASSOCIATE - The proxy is relaying UDP datagrams to server and the responses from the server are relayed back to the client. The connection is started via TCP, but later on the proxy server must offer an UDP listener, on which datagrams with specific format are being sent.
 **** SOCKS5 connection flow
 
@@ -31,7 +31,11 @@ The messages of SOCKS5 can be roughly divided in ~requests~ and ~responses~. Eve
 *** Experiments
 **** Prerequisites
 ***** Network setup
+*CONNECT and UDP_ASSOCIATE commands*
 [[./img/lab_1_network_setup.png]]
+*BIND command*
+[[./img/lab_1_network_setup_bind_command.png]]
+
 ***** Compiling wirez
 As [[https://github.com/v-byte-cpu/wirez][Wirez]] doesn't provide ready to use binary, we must compile it. The instructions below are for Linux. You can compile the program by following the instructions in the repository.
 1. Install go 1.20
@@ -158,10 +162,110 @@ Data (5 bytes)
 #+END_SRC
 **** Exploring the BIND command
 ***** Setting up mock TCP Server
-***** Connecting to the TCP server via netcat and socat
+#+BEGIN_SRC
+  $ docker run -it --entrypoint=/bin/sh subfuzion/netcat
+  $ nc -l 8888
+#+END_SRC
+***** Connecting to the TCP server via netcat and socat - issuing CONNECT command
+#+BEGIN_SRC
+# Get TCP server IP
+$  IP=`docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker ps -q -f "ancestor=subfuzion/netcat")`
+$  socat --experimental - SOCKS5:127.0.0.1:1080:"$IP":8888
+#+END_SRC
+***** Connecting from the TCP server to the client via the proxy - issuing BIND command
+#+BEGIN_SRC
+# Get TCP server IP
+$ IP=`docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker ps -q -f "ancestor=subfuzion/netcat")`
+$ socat --experimental - SOCKS5-LISTEN:127.0.0.1:1080:"$IP":8888
+#+END_SRC
 ***** Connecting from the mock TCP server to the client via the proxy
+#+BEGIN_SRC
+$ CONTAINER_ID=(docker ps -q -f "ancestor=subfuzion/netcat)
+$ docker exec -it "$CONTAINER_ID" sh
+$ nc PROXY_IP PROXY_PORT_FROM_BIND_RESPONSE
+#+END_SRC
+*note: the PROXY_PORT_FROM_BIND_RESPONSE is obtained from analyzing the response with Wireshark*
 ***** Analyzing the traffic
+*notes:*
+*1. The messages which overlap with the ~CONNECT~ command are omitted here*
+*2. It appears that the data proxied from the server, to the client (i.e. data send to the binded port) is not encapsulated in protocol-specific message*
+
+1. Bind Request
+#+BEGIN_SRC
+Transmission Control Protocol, Src Port: 1080, Dst Port: 40264, Seq: 3, Ack: 14, Len: 10
+Socks Protocol
+    Version: 5
+    Results(V5): Succeeded (0)
+    Reserved: 0
+    Address Type: IPv4 (1)
+    Remote Address: 172.17.0.2
+    Port: 59073
+#+END_SRC
+2. Bind response
+#+BEGIN_SRC
+Transmission Control Protocol, Src Port: 1080, Dst Port: 40264, Seq: 13, Ack: 14, Len: 10
+Socks Protocol
+    Version: 5
+    Results(V5): Succeeded (0)
+    Reserved: 0
+    Address Type: IPv4 (1)
+    Remote Address: 172.17.0.3
+    Remote Host Port: 57608
+#+END_SRC
 **** Exploring the UDP_ASSOCIATE command
 ***** Setting up mock UDP server
+#+BEGIN_SRC
+$ nc -lu 8888
+#+END_SRC
 ***** Connecting to the mock UDP server via wirez and netcat
+#+BEGIN_SRC
+$ ./wirez run -F 127.0.0.1:1080 -- nc -u 148.113.191.22 8888
+#+END_SRC
+
 ***** Analyzing the traffic
+*Note: The UDP request to the server doesn't contain any socks5 specific encapsulatin
+1. ~UDP_ASSOCIATE~ command request
+#+BEGIN_SRC
+Transmission Control Protocol, Src Port: 39302, Dst Port: 1080, Seq: 4, Ack: 3, Len: 10
+Socks Protocol
+    Version: 5
+    Command: UdpAssociate (3)
+    Reserved: 0
+    Address Type: IPv4 (1)
+    Remote Address: 0.0.0.0
+    Port: 0
+#+END_SRC
+2. ~UDP_ASSOCIATE~ command response
+#+BEGIN_SRC
+Transmission Control Protocol, Src Port: 1080, Dst Port: 39302, Seq: 3, Ack: 14, Len: 10
+Socks Protocol
+    Version: 5
+    Results(V5): Succeeded (0)
+    Reserved: 0
+    Address Type: IPv4 (1)
+    Remote Address: 172.17.0.2
+    Port: 36277
+#+END_SRC
+3. Transfer from client to server via proxy
+#+BEGIN_SRC
+User Datagram Protocol, Src Port: 33010, Dst Port: 36277
+Data (15 bytes)
+
+0000  00 00 00 01 94 71 bf 16 22 b8 74 65 73 74 0a      .....q..".test.
+    Data: 000000019471bf1622b8746573740a
+    [Length: 15]
+
+#+END_SRC
+4. Transfering server response to client via proxy
+#+BEGIN_SRC
+User Datagram Protocol, Src Port: 36277, Dst Port: 33010
+Data (15 bytes)
+
+0000  00 00 00 01 94 71 bf 16 22 b8 74 65 73 74 0a      .....q..".test.
+    Data: 000000019471bf1622b8746573740a
+    [Length: 15]
+
+#+END_SRC
+*** Conclusion
+**** Observed messages
+

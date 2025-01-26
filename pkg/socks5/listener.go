@@ -109,6 +109,8 @@ func handleRequest(connReq *requests.ProxyRequest, client net.Conn) ([]byte, err
 	var errProxy error
 	if connReq.CMD == requests.CONNECT {
 		errProxy = proxy.StartProxy(client, addr, errors)
+	} else if connReq.CMD == requests.UDP_ASSOCIATE {
+		errProxy = proxy.StartProxyUdp(client, addr, errors)
 	} else {
 		errProxy = proxy.StartProxyBind(client, addr, errors)
 	}
@@ -116,10 +118,19 @@ func handleRequest(connReq *requests.ProxyRequest, client net.Conn) ([]byte, err
 		return []byte{}, errProxy, nil
 	}
 	// fixme: when the command is bind two responses must be send
-	response, err := responses.NewSucceeded(connReq.ATYP, &connReq.DST_ADDR, connReq.DST_PORT).ToBinary()
-	client.Write(response)
-	response, err = responses.NewSucceeded(connReq.ATYP, &shared.DstAddr{Type: shared.ATYP_IPV4, Value: "127.0.0.1"}, 8877).ToBinary()
-	return response, err, errors
+
+	if connReq.CMD == requests.CONNECT {
+		response, err := responses.NewSucceeded(connReq.ATYP, &connReq.DST_ADDR, connReq.DST_PORT).ToBinary()
+		return response, err, errors
+	} else if connReq.CMD == requests.UDP_ASSOCIATE {
+		response, err := responses.NewSucceeded(connReq.ATYP, &shared.DstAddr{Type: shared.ATYP_IPV4, Value: "127.0.0.1"}, 8878).ToBinary()
+		return response, err, errors
+	} else {
+		response, err := responses.NewSucceeded(connReq.ATYP, &connReq.DST_ADDR, connReq.DST_PORT).ToBinary()
+		client.Write(response)
+		response, err = responses.NewSucceeded(connReq.ATYP, &shared.DstAddr{Type: shared.ATYP_IPV4, Value: "127.0.0.1"}, 8877).ToBinary()
+		return response, err, errors
+	}
 }
 
 func notifyClientForError(errType int, client io.ReadWriter) {

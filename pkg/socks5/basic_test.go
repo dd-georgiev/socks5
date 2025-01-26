@@ -13,7 +13,6 @@ func TestProxyWorksForHTTP(t *testing.T) {
 	proxyIp := "127.0.0.1:1080"
 	expectedIp := "109.160.125.249"
 	go Start(":1080")
-
 	dialer, err := proxy.SOCKS5("tcp", proxyIp, nil, proxy.Direct)
 	if err != nil {
 		t.Error("Failed connecting to proxy")
