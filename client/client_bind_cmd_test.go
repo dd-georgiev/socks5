@@ -2,7 +2,7 @@ package client
 
 import (
 	"context"
-	"net"
+	"socks5_server/client/sockstests"
 	"socks5_server/messages/responses/command_response"
 	"socks5_server/messages/shared"
 	"strconv"
@@ -13,13 +13,13 @@ import (
 const serverRequestResponse = "OK"
 const serverResponse = "TEST"
 
-var serverConnectedWithPort uint16 // this variable holds the local port used when connecting from the server, to the proxy server
+// this variable holds the local port used when connecting from the server, to the proxy server
 
 func Test_Client_Bind(t *testing.T) {
 	ctx, _ := context.WithTimeout(context.Background(), time.Second*60)
-	mockTcp := startServer()
-	addr := mockTcp.(*net.TCPAddr).IP.String()
-	port := mockTcp.(*net.TCPAddr).Port
+	var serverConnectedWithPort uint16 // this variable is altered by the BindServer to indicate which local port is being used for the server->proxy->client connection
+	addr, port := sockstests.BindServer(serverRequestResponse, serverResponse, &serverConnectedWithPort)
+
 	connectClient := openConnectCmd(ctx, addr, uint16(port))
 	// auth
 	bindClient, err := NewSocks5Client(ctx, "127.0.0.1:1080")
@@ -31,12 +31,13 @@ func Test_Client_Bind(t *testing.T) {
 	if bindClient.State() != Authenticated {
 		t.Fatalf("Failed authentication")
 	}
-	// Bind
+	// send bind command
 	addrProxy, portProxy, err := bindClient.BindRequest(addr, uint16(port))
 	if err != nil {
 		t.Fatalf("Failed sending bind request to Dante. Reason %v", err)
 	}
-	// Send proxy address to server
+	// Send proxy address to server, so that the server can open connection to it
+	// and transmit data back to the client. This is sent via the TCP session from the CONNECT command
 	rwConn, err := connectClient.GetReaderWriter()
 	rwConn.Write([]byte(addrProxy + ":" + strconv.Itoa(int(portProxy))))
 	buf := make([]byte, 1024)
@@ -78,45 +79,4 @@ func openConnectCmd(ctx context.Context, addr string, port uint16) *Socks5Client
 		panic(err)
 	}
 	return client
-}
-
-func startServer() net.Addr {
-	srv, err := net.Listen("tcp4", "127.0.0.1:4440")
-	if err != nil {
-		panic(err)
-	}
-
-	go func() {
-		client, err := srv.Accept()
-		if err != nil {
-			panic(err)
-		}
-		buf := make([]byte, 1024)
-		n, err := client.Read(buf)
-		if err != nil {
-			panic(err)
-		}
-		conn, err := connectBackToClient(string(buf[:n]))
-		if err != nil {
-			panic(err)
-		}
-		client.Write([]byte(serverRequestResponse))
-		conn.Write([]byte(serverResponse))
-		conn.Close()
-		client.Close()
-	}()
-	return srv.Addr()
-}
-
-func connectBackToClient(addr string) (*net.TCPConn, error) {
-	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
-	if err != nil {
-		return nil, err
-	}
-	conn, err := net.DialTCP("tcp", nil, tcpAddr)
-	if err != nil {
-		return nil, err
-	}
-	serverConnectedWithPort = uint16(conn.LocalAddr().(*net.TCPAddr).Port)
-	return conn, nil
 }

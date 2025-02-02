@@ -45,7 +45,7 @@ func (client *Socks5Client) setState(newState ConnectionState) {
 	client.state = newState
 }
 
-// Sets the err and state field of the client struct.
+// Sets the err and state field of the client struct. Only public methods must set the error, the private methods only return it to the caller
 func (client *Socks5Client) setError(err error) {
 	client.err = err
 	client.state = Errored
@@ -93,57 +93,62 @@ func (client *Socks5Client) ConnectRequest(addr string, port uint16) (string, ui
 	if client.state != Authenticated {
 		return "", 0, errors.New("client is not authenticated")
 	}
-	commandRequest := command_request.CommandRequest{}
-	commandRequest.CMD = shared.CONNECT
-	commandRequest.DST_ADDR = shared.DstAddr{Value: addr, Type: shared.ATYP_IPV4}
-	commandRequest.DST_PORT = port
-	req, err := commandRequest.ToBytes()
 
-	if err != nil {
-		return "", 0, err
-	}
-	_, err = client.tcpConn.Write(req)
+	err := client.constructAndSendCommand(shared.CONNECT, addr, shared.ATYP_IPV4, port)
 	if err != nil {
 		client.setError(err)
 		return "", 0, err
 	}
-	client.setState(CommandRequested)
+
 	addrProxy, portProxy, err := client.handleCommandResponse()
 	if err != nil {
 		client.setError(err)
 		return "", 0, err
 	}
+
 	return addrProxy, portProxy, nil
 }
 func (client *Socks5Client) BindRequest(addr string, port uint16) (string, uint16, error) {
 	if client.state != Authenticated {
 		return "", 0, errors.New("client is not authenticated")
 	}
-	commandRequest := command_request.CommandRequest{}
-	commandRequest.CMD = shared.BIND
-	commandRequest.DST_ADDR = shared.DstAddr{Value: addr, Type: shared.ATYP_IPV4}
-	commandRequest.DST_PORT = port
-	req, err := commandRequest.ToBytes()
 
-	if err != nil {
-		return "", 0, err
-	}
-	_, err = client.tcpConn.Write(req)
+	err := client.constructAndSendCommand(shared.BIND, addr, shared.ATYP_IPV4, port)
 	if err != nil {
 		client.setError(err)
 		return "", 0, err
 	}
 
-	client.setState(CommandRequested)
 	addrProxy, portProxy, err := client.handleCommandResponse()
 	if err != nil {
 		client.setError(err)
 		return "", 0, err
 	}
+
 	client.setState(CommandAccepted)
 	return addrProxy, portProxy, err
 }
 
+// UDPAssociateRequest Send a UDP_ASSOCIATE command request to the proxy server
+func (client *Socks5Client) UDPAssociateRequest(addr string, port uint16) (string, uint16, error) {
+	if client.state != Authenticated {
+		return "", 0, errors.New("client is not authenticated")
+	}
+
+	err := client.constructAndSendCommand(shared.UDP_ASSOCIATE, addr, shared.ATYP_IPV4, port)
+	if err != nil {
+		client.setError(err)
+		return "", 0, err
+	}
+
+	addrProxy, portProxy, err := client.handleCommandResponse()
+	if err != nil {
+		client.setError(err)
+		return "", 0, err
+	}
+
+	return addrProxy, portProxy, nil
+}
 func (client *Socks5Client) Close() error {
 	client.setState(Closed)
 	return client.tcpConn.Close()
@@ -158,7 +163,20 @@ func (client *Socks5Client) GetReaderWriter() (io.ReadWriter, error) {
 }
 
 // Private
+func (client *Socks5Client) constructAndSendCommand(cmdType uint16, addr string, addrType uint16, port uint16) error {
+	req, err := constructCommand(cmdType, addr, addrType, port)
+	if err != nil {
+		return err
+	}
 
+	_, err = client.tcpConn.Write(req)
+	if err != nil {
+		return err
+	}
+
+	client.setState(CommandRequested)
+	return nil
+}
 func (client *Socks5Client) handleAuth() error {
 	if client.state != ExpectingAcceptedAuthMethod {
 		return errors.New("client is not expecting accepted auth clients")
@@ -166,12 +184,10 @@ func (client *Socks5Client) handleAuth() error {
 	buf := make([]byte, 64)
 	_, err := client.tcpConn.Read(buf)
 	if err != nil {
-		client.setError(err)
 		return err
 	}
 	acceptedMethod := accept_auth_method.AcceptAuthMethod{}
 	if err := acceptedMethod.Deserialize(buf); err != nil {
-		client.setError(err)
 		return err
 	}
 	if acceptedMethod.Method() != shared.NoAuthRequired {
@@ -186,11 +202,9 @@ func (client *Socks5Client) handleCommandResponse() (string, uint16, error) {
 	}
 	commandResponse, err := waitForServerCommandResponse(client.tcpConn)
 	if err != nil {
-		client.setError(err)
 		return "", 0, err
 	}
 	if err := isCommandSuccessful(commandResponse); err != nil {
-		client.setError(err)
 		return "", 0, err
 	}
 
@@ -232,4 +246,12 @@ func openTcpConnection(servAddr string) (*net.TCPConn, error) {
 		return nil, err
 	}
 	return conn, nil
+}
+
+func constructCommand(cmdType uint16, addr string, addrType uint16, port uint16) ([]byte, error) {
+	commandRequest := command_request.CommandRequest{}
+	commandRequest.CMD = cmdType
+	commandRequest.DST_ADDR = shared.DstAddr{Value: addr, Type: addrType}
+	commandRequest.DST_PORT = port
+	return commandRequest.ToBytes()
 }

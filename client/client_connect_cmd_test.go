@@ -2,7 +2,7 @@ package client
 
 import (
 	"context"
-	"net"
+	"socks5_server/client/sockstests"
 	"socks5_server/messages/shared"
 	"testing"
 	"time"
@@ -10,11 +10,12 @@ import (
 
 func Test_Client_Connect(t *testing.T) {
 	ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
-	mockTcp := startEchoServer()
+	addr, port := sockstests.TcpEchoServer()
 	client, err := NewSocks5Client(ctx, "127.0.0.1:1080")
 	if err != nil {
 		t.Fatal("Failed connecting to Dante")
 	}
+	// authenticate
 	err = client.Connect([]uint16{shared.NoAuthRequired})
 	if err != nil {
 		t.Fatalf("Failed sending authentication request. Reason %v", err)
@@ -22,15 +23,15 @@ func Test_Client_Connect(t *testing.T) {
 	if client.State() != Authenticated {
 		t.Fatalf("Failed authentication")
 	}
-	addr := mockTcp.(*net.TCPAddr).IP.String()
-	port := mockTcp.(*net.TCPAddr).Port
-	_, _, err = client.ConnectRequest(addr, uint16(port))
+	// send connect request
+	_, _, err = client.ConnectRequest(addr, port)
 	if err != nil {
 		t.Fatalf("Failed sending connect request to Dante. Reason %v", err)
 	}
 	if client.State() != CommandAccepted {
 		t.Fatalf("Failed sending connect request to Dante")
 	}
+	// send and receive data
 	rw, err := client.GetReaderWriter()
 	if err != nil {
 		t.Fatalf("%v", err)
@@ -50,26 +51,4 @@ func Test_Client_Connect(t *testing.T) {
 		t.Fatalf("Expected '%s', got '%s'", testString, string(buf[:n]))
 	}
 	client.Close()
-}
-
-func startEchoServer() net.Addr {
-	srv, err := net.Listen("tcp4", "127.0.0.1:0")
-	if err != nil {
-		panic(err)
-	}
-
-	go func() {
-		client, err := srv.Accept()
-		if err != nil {
-			panic(err)
-		}
-		buf := make([]byte, 1024)
-		n, err := client.Read(buf)
-		if err != nil {
-			panic(err)
-		}
-		client.Write(buf[:n])
-		client.Close()
-	}()
-	return srv.Addr()
 }
