@@ -1,0 +1,8 @@
+services:
+  dante:
+    image: wernight/dante
+    ports:
+      - 1080:1080
+  fake-server:
+    image: subfuzion/netcat
+    entrypoint: "tail -f /dev/null"

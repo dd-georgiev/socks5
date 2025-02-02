@@ -1,0 +1,46 @@
+I. Overview
+The SOCKS5 protocol provides one-way communication mechanisms via the CONNECT command. This way a client can send a request
+via the SOCKS5 server to another remote server.
+
+Currently only the NO_AUTH option is supported, but further auth options must be implemented in the socks5/auth package.
+The proxy its self is implemented in the socks5/proxy package. The proxy its self is simple splice between two io.ReadWriters.
+
+The packages socks5/requests and socks5/responses provide utilities for encapsulating data into the SOCKS5 formats.
+
+The socks5/shared package contains data structures used by both the request and the responses.
+
+
+II. Packet flows
+
+                      Client sends                    │                      Server sends
+                                                      │
+          +----+----------+----------+                │        +----+--------+
+          |VER | NMETHODS | METHODS  |                │        |VER | METHOD |
+          +----+----------+----------+ ───────────────┼──────► +----+--------+
+          | 1  |    1     | 1 to 255 |                │        | 1  |   1    |
+          +----+----------+----------+                │        +----│--------+
+                                                      │             │
+                                                      │             │
+                          ┌───────────────────────────┼─────────────┘
+                          ▼                           │
++----+-----+-------+------+----------+----------+     │                                                        
+|VER | CMD |  RSV  | ATYP | DST.ADDR | DST.PORT |     │
++----+-----+-------+------+----------+----------+     │
+| 1  |  1  | X'00' |  1   | Variable |    2     |     │
++----+-----+-------+------│----------+----------+     │
+                          │                           │
+                          │                           │
+                          └───────────────────────────┼──────────────────────────┐
+                                                      │                          │
+                                                      │                          │
+                                                      │       +----+-----+-------▼------+----------+----------+
+                                                      │       |VER | REP |  RSV  | ATYP | BND.ADDR | BND.PORT |
+                                                      │       +----+-----+-------+------+----------+----------+
+                                                      │       | 1  |  1  | X'00' |  1   | Variable |    2     |
+                                                      │       +----+-----+-------│------+----------+----------+
+               ┌────────────────┐                     │                          │
+               │ Starts sending │◄────────────────────┼──────────────────────────┘
+               │ data to server │                     │
+               │ via socks5     │                     │
+               │ proxy          │                     │
+               └────────────────┘                     │
