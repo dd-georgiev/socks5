@@ -15,8 +15,11 @@ func (aam *AcceptAuthMethod) Method() uint16 {
 }
 
 func (aam *AcceptAuthMethod) SetMethod(method uint16) error {
-	if method > shared.JsonParameterBlock || method == shared.Unassigned {
+	if method != shared.NoAcceptableMethods && method > shared.JsonParameterBlock {
 		return messages.UnknownAuthMethodError{Method: method}
+	}
+	if method == shared.Unassigned {
+		return messages.UnknownAuthMethodError{Method: shared.Unassigned}
 	}
 	aam.method = method
 	return nil

@@ -66,7 +66,7 @@ func (m *AvailableAuthMethods) Deserialize(buf []byte) error {
 	authMethodsCount := uint16(buf[messageAvailMethodsIndex])
 
 	lastAuthMethodIndex := int(messageAuthMethodsStartIndex + authMethodsCount)
-	if lastAuthMethodIndex >= len(buf) {
+	if lastAuthMethodIndex > len(buf) {
 		return messages.MalformedMessageError{}
 	}
 

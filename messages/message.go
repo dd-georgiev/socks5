@@ -5,6 +5,6 @@ const PROTOCOL_VERSION byte = 0x05
 type MessageType int
 
 type Socks5Message interface {
-	ToByte() []byte
+	ToByte() ([]byte, error)
 	Deserialize([]byte) error
 }

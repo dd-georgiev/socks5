@@ -16,4 +16,5 @@ const (
 	NDS                 = 7
 	MAF                 = 8
 	JsonParameterBlock  = 9
+	NoAcceptableMethods = 255
 )
