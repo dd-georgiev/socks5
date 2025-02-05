@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"net"
 	"socks5_server/client"
 	"socks5_server/client/sockstests"
 	"socks5_server/messages/shared"
@@ -56,16 +55,4 @@ func Test_Client_Connect(t *testing.T) {
 		t.Fatalf("Expected '%s', got '%s'", testString, string(buf[:n]))
 	}
 	socks5client.Close()
-}
-
-func startSocks5Server() (string, int) {
-	listener, err := net.Listen("tcp4", ":1080")
-	if err != nil {
-		panic(err)
-	}
-	//	srv := Socks5Server{Listener: listener}
-	go Start(listener)
-	addr := listener.Addr().(*net.TCPAddr).IP.String()
-	port := listener.Addr().(*net.TCPAddr).Port
-	return addr, port
 }

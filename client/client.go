@@ -198,7 +198,7 @@ func (client *Socks5Client) handleAuth() error {
 }
 func (client *Socks5Client) handleCommandResponse() (string, uint16, error) {
 	if client.State() != CommandRequested {
-		return "", 0, errors.New("client is has not requested command")
+		return "", 0, errors.New("client has not requested command")
 	}
 	commandResponse, err := waitForServerCommandResponse(client.tcpConn)
 	if err != nil {

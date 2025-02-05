@@ -65,7 +65,7 @@ func Test_Client_UDP_associate(t *testing.T) {
 		t.Fatalf("Failed reading from UDP. Reason %v", err)
 	}
 	if string(response.DATA) != dataSendToUDPEcho {
-		t.Fatalf("Response doesn't match send data. expected %v got %v", response.DATA, dataSendToUDPEcho)
+		t.Fatalf("Response doesn't match send data. expected %v got %v", dataSendToUDPEcho, response.DATA)
 	}
 
 }

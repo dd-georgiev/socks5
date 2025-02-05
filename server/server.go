@@ -92,18 +92,35 @@ func (session *Session) handleCmd() {
 		session.setError(err)
 	}
 
-	resp := command_response.CommandResponse{}
-	if cmd.CMD != shared.CONNECT {
-		resp.Status = command_response.CommandNotSupported
-		bytes, err := resp.ToBytes()
-		if err != nil {
-			session.setError(err)
-		}
-		session.conn.Write(bytes)
-		session.setError(errors.New("unsupported command"))
+	switch cmd.CMD {
+	case shared.CONNECT:
+		session.handleConnectCmd(cmd)
+		return
+	case shared.BIND:
+		session.handleBindCmd(cmd)
+		return
+	case shared.UDP_ASSOCIATE:
+		session.handleUdpAssociateCmd(cmd)
 		return
 	}
+	resp := command_response.CommandResponse{}
+	resp.Status = command_response.CommandNotSupported
+	bytes, err := resp.ToBytes()
+	if err != nil {
+		session.setError(err)
+	}
+	session.conn.Write(bytes)
+	session.setError(errors.New("unsupported command"))
+	return
 
+}
+func (session *Session) proxyErrorHandler(errors chan error, proxy proxies.Proxy) {
+	err := <-errors
+	session.setError(err)
+	proxy.Stop()
+}
+
+func (session *Session) handleConnectCmd(cmd command_request.CommandRequest) {
 	proxyErrors := make(chan error)
 	remoteAddr := fmt.Sprintf("%s:%d", cmd.DST_ADDR.Value, cmd.DST_PORT)
 	proxy, err := proxies.NewConnectProxy(remoteAddr, session.conn)
@@ -116,6 +133,7 @@ func (session *Session) handleCmd() {
 	}
 	go session.proxyErrorHandler(proxyErrors, proxy)
 
+	resp := command_response.CommandResponse{}
 	resp.Status = command_response.Success
 	resp.BND_PORT = 0
 	resp.BND_ADDR = shared.DstAddr{Value: "0.0.0.0", Type: shared.ATYP_IPV4}
@@ -123,8 +141,41 @@ func (session *Session) handleCmd() {
 	session.conn.Write(bytes)
 	session.state = Proxying
 }
-func (session *Session) proxyErrorHandler(errors chan error, proxy *proxies.ConnectProxy) {
-	err := <-errors
-	session.setError(err)
-	proxy.Stop()
+func (session *Session) handleUdpAssociateCmd(_ command_request.CommandRequest) {
+	proxyErrors := make(chan error)
+	proxy, err := proxies.NewUDPProxy()
+	if err != nil {
+		return
+	}
+	go proxy.Start(proxyErrors)
+
+	resp := command_response.CommandResponse{}
+	resp.Status = command_response.Success
+	resp.BND_PORT = proxy.Port
+	resp.BND_ADDR = shared.DstAddr{Value: session.conn.LocalAddr().(*net.TCPAddr).IP.String(), Type: shared.ATYP_IPV4}
+	bytes, _ := resp.ToBytes()
+	session.conn.Write(bytes)
+	session.state = Proxying
+	go session.proxyErrorHandler(proxyErrors, proxy)
+}
+func (session *Session) handleBindCmd(cmd command_request.CommandRequest) {
+	proxyErrors := make(chan error)
+	remoteAddr := fmt.Sprintf("%s:%d", cmd.DST_ADDR.Value, cmd.DST_PORT)
+	proxy, err := proxies.NewBindProxy(session.conn, remoteAddr)
+	if err != nil {
+		session.setError(err)
+	}
+	go proxy.Start(proxyErrors) // for some reason doesn't proxy
+	if err != nil {
+		session.setError(err)
+	}
+	go session.proxyErrorHandler(proxyErrors, proxy)
+
+	resp := command_response.CommandResponse{}
+	resp.Status = command_response.Success
+	resp.BND_PORT = proxy.ListeningPort
+	resp.BND_ADDR = shared.DstAddr{Value: proxy.ListeningIp, Type: shared.ATYP_IPV4}
+	bytes, _ := resp.ToBytes()
+	session.conn.Write(bytes)
+	session.state = Proxying
 }
