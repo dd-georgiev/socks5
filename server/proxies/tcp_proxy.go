@@ -21,16 +21,7 @@ func NewConnectProxy(addr string, client io.ReadWriteCloser) (*TCPProxy, error) 
 }
 
 func (proxy *TCPProxy) Start(errors chan error) error {
-	go func() {
-		_, err := io.Copy(proxy.server, proxy.client)
-		if err != nil {
-			errors <- err
-		}
-	}()
-	_, err := io.Copy(proxy.client, proxy.server)
-	if err != nil {
-		errors <- err
-	}
+	SpliceConnections(proxy.server, proxy.client, errors)
 	return nil
 }
 

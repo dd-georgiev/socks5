@@ -1,3 +1,5 @@
+*The code below is written in the order I wrote it initally, without any refactoring or improvements*
+
 * Lab 1 - Exploring the protocol
 ** Overview
 The goal of this exercise is to explore the protocol by monitoring the network traffic from client, through proxy server and to mocked TCP/UDP server. In the end we will have a series of pcaps outlining the different SOCKS5 commands. Authentication and traffic rules(i.e. the proxy server allowing/denying certain requests is out of scope.
