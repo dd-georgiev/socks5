@@ -94,7 +94,7 @@ func (client *Socks5Client) ConnectRequest(addr string, port uint16) (string, ui
 		return "", 0, errors.New("client is not authenticated")
 	}
 
-	err := client.constructAndSendCommand(shared.CONNECT, addr, shared.ATYP_IPV4, port)
+	err := client.constructAndSendCommand(command_request.CONNECT, addr, shared.ATYP_IPV4, port)
 	if err != nil {
 		client.setError(err)
 		return "", 0, err
@@ -113,7 +113,7 @@ func (client *Socks5Client) BindRequest(addr string, port uint16) (string, uint1
 		return "", 0, errors.New("client is not authenticated")
 	}
 
-	err := client.constructAndSendCommand(shared.BIND, addr, shared.ATYP_IPV4, port)
+	err := client.constructAndSendCommand(command_request.BIND, addr, shared.ATYP_IPV4, port)
 	if err != nil {
 		client.setError(err)
 		return "", 0, err
@@ -135,7 +135,7 @@ func (client *Socks5Client) UDPAssociateRequest(addr string, port uint16) (strin
 		return "", 0, errors.New("client is not authenticated")
 	}
 
-	err := client.constructAndSendCommand(shared.UDP_ASSOCIATE, addr, shared.ATYP_IPV4, port)
+	err := client.constructAndSendCommand(command_request.UDP_ASSOCIATE, addr, shared.ATYP_IPV4, port)
 	if err != nil {
 		client.setError(err)
 		return "", 0, err

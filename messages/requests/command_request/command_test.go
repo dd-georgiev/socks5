@@ -13,7 +13,7 @@ func Test_CommandRequest_Deserialize_With_IPv6(t *testing.T) {
 	requestedPorts := [][]byte{{0xFF, 0xFF}, {0x00, 0x50}}
 	expectedIps := []string{"2001:0000:130f:0000:0000:09c0:876a:130b", "0000:0000:0000:0000:0000:0000:0000:0001"}
 	expectedPorts := []uint16{65535, 80}
-	requestTypes := []byte{shared.CONNECT, shared.BIND, shared.UDP_ASSOCIATE}
+	requestTypes := []byte{CONNECT, BIND, UDP_ASSOCIATE}
 	for _, requestType := range requestTypes {
 		for i := range requestIps {
 			req := []byte{0x05, requestType, 0x00, 0x04}
@@ -47,7 +47,7 @@ func Test_CommandRequest_Deserialize_With_IpV4(t *testing.T) {
 	requestedPorts := [][]byte{{0xFF, 0xFF}, {0x00, 0x50}}
 	expectedIps := []string{"127.0.0.1", "65.65.65.65"}
 	expectedPorts := []uint16{65535, 80}
-	requestTypes := []byte{shared.CONNECT, shared.BIND, shared.UDP_ASSOCIATE}
+	requestTypes := []byte{CONNECT, BIND, UDP_ASSOCIATE}
 	for _, requestType := range requestTypes {
 		for i := range requestIps {
 			req := []byte{0x05, requestType, 0x00, 0x01}
@@ -77,7 +77,7 @@ func Test_CommandRequest_Deserialize_With_IpV4(t *testing.T) {
 }
 
 func Test_CommandRequest_Deserialize_With_FQDN(t *testing.T) {
-	requestTypes := []byte{shared.CONNECT, shared.BIND, shared.UDP_ASSOCIATE}
+	requestTypes := []byte{CONNECT, BIND, UDP_ASSOCIATE}
 	requestFqdns := [][]byte{{0x0b, 0x69, 0x66, 0x63, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x2e, 0x6d, 0x65}, {0x0a, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x2e, 0x63, 0x6f, 0x6d}}
 	requestedPorts := [][]byte{{0xFF, 0xFF}, {0x00, 0x50}}
 	expectedFqdns := []string{"ifconfig.me", "google.com"}
@@ -111,7 +111,7 @@ func Test_CommandRequest_Deserialize_With_FQDN(t *testing.T) {
 }
 
 func Test_CommandRequest_Deserialize_With_InvalidVersion(t *testing.T) {
-	requestTypes := []byte{shared.CONNECT, shared.BIND, shared.UDP_ASSOCIATE}
+	requestTypes := []byte{CONNECT, BIND, UDP_ASSOCIATE}
 	requestAddresses := [][]byte{{0x0b, 0x69, 0x66, 0x63, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x2e, 0x6d, 0x65}, {0x7f, 0x00, 0x00, 0x01}, {0x20, 0x01, 0x00, 0x00, 0x13, 0x0f, 0x00, 0x00, 0x00, 0x00, 0x09, 0xC0, 0x87, 0x6a, 0x13, 0x0b}}
 	requestPorts := [][]byte{{0x00, 0x50}, {0xFF, 0xFF}, {0x00, 0x50}}
 	requestAtyp := []byte{shared.ATYP_FQDN, shared.ATYP_IPV4, shared.ATYP_IPV6}
@@ -135,7 +135,7 @@ func Test_CommandRequest_Deserialize_With_InvalidVersion(t *testing.T) {
 }
 
 func Test_CommandRequest_Deserialize_With_InvalidRsv(t *testing.T) {
-	requestTypes := []byte{shared.CONNECT, shared.BIND, shared.UDP_ASSOCIATE}
+	requestTypes := []byte{CONNECT, BIND, UDP_ASSOCIATE}
 	requestAddrresses := [][]byte{{0x0b, 0x69, 0x66, 0x63, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x2e, 0x6d, 0x65}, {0x7f, 0x00, 0x00, 0x01}, {0x20, 0x01, 0x00, 0x00, 0x13, 0x0f, 0x00, 0x00, 0x00, 0x00, 0x09, 0xC0, 0x87, 0x6a, 0x13, 0x0b}}
 	requestPorts := [][]byte{{0x00, 0x50}, {0xFF, 0xFF}, {0x00, 0x50}}
 	requestAtyp := []byte{shared.ATYP_FQDN, shared.ATYP_IPV4, shared.ATYP_IPV6}
@@ -206,15 +206,15 @@ func Benchmark_CommandRequest_Deserialize_With_FQDN(b *testing.B) {
 
 func Test_CommandRequest_ToBytes(t *testing.T) {
 	requests := []CommandRequest{
-		{CMD: shared.CONNECT, DST_ADDR: shared.DstAddr{Value: "127.0.0.1", Type: shared.ATYP_IPV4}, DST_PORT: 80},
-		{CMD: shared.BIND, DST_ADDR: shared.DstAddr{Value: "65.65.65.65", Type: shared.ATYP_IPV4}, DST_PORT: 65535},
-		{CMD: shared.UDP_ASSOCIATE, DST_ADDR: shared.DstAddr{Value: "127.0.0.1", Type: shared.ATYP_IPV4}, DST_PORT: 80},
-		{CMD: shared.CONNECT, DST_ADDR: shared.DstAddr{Value: "0000:0000:0000:0000:0000:0000:0000:0001", Type: shared.ATYP_IPV6}, DST_PORT: 80},
-		{CMD: shared.BIND, DST_ADDR: shared.DstAddr{Value: "2001:0000:130f:0000:0000:09c0:876a:130b", Type: shared.ATYP_IPV6}, DST_PORT: 65535},
-		{CMD: shared.UDP_ASSOCIATE, DST_ADDR: shared.DstAddr{Value: "0000:0000:0000:0000:0000:0000:0000:0001", Type: shared.ATYP_IPV6}, DST_PORT: 80},
-		{CMD: shared.CONNECT, DST_ADDR: shared.DstAddr{Value: "google.com", Type: shared.ATYP_FQDN}, DST_PORT: 80},
-		{CMD: shared.BIND, DST_ADDR: shared.DstAddr{Value: "google.com", Type: shared.ATYP_FQDN}, DST_PORT: 65535},
-		{CMD: shared.UDP_ASSOCIATE, DST_ADDR: shared.DstAddr{Value: "google.com", Type: shared.ATYP_FQDN}, DST_PORT: 80},
+		{CMD: CONNECT, DST_ADDR: shared.DstAddr{Value: "127.0.0.1", Type: shared.ATYP_IPV4}, DST_PORT: 80},
+		{CMD: BIND, DST_ADDR: shared.DstAddr{Value: "65.65.65.65", Type: shared.ATYP_IPV4}, DST_PORT: 65535},
+		{CMD: UDP_ASSOCIATE, DST_ADDR: shared.DstAddr{Value: "127.0.0.1", Type: shared.ATYP_IPV4}, DST_PORT: 80},
+		{CMD: CONNECT, DST_ADDR: shared.DstAddr{Value: "0000:0000:0000:0000:0000:0000:0000:0001", Type: shared.ATYP_IPV6}, DST_PORT: 80},
+		{CMD: BIND, DST_ADDR: shared.DstAddr{Value: "2001:0000:130f:0000:0000:09c0:876a:130b", Type: shared.ATYP_IPV6}, DST_PORT: 65535},
+		{CMD: UDP_ASSOCIATE, DST_ADDR: shared.DstAddr{Value: "0000:0000:0000:0000:0000:0000:0000:0001", Type: shared.ATYP_IPV6}, DST_PORT: 80},
+		{CMD: CONNECT, DST_ADDR: shared.DstAddr{Value: "google.com", Type: shared.ATYP_FQDN}, DST_PORT: 80},
+		{CMD: BIND, DST_ADDR: shared.DstAddr{Value: "google.com", Type: shared.ATYP_FQDN}, DST_PORT: 65535},
+		{CMD: UDP_ASSOCIATE, DST_ADDR: shared.DstAddr{Value: "google.com", Type: shared.ATYP_FQDN}, DST_PORT: 80},
 	}
 	expected := [][]byte{
 		{0x05, 0x01, 0x00, byte(shared.ATYP_IPV4), 0x7f, 0x00, 0x00, 0x01, 0x00, 0x50},

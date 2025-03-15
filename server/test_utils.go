@@ -1,6 +1,8 @@
 package server
 
-import "net"
+import (
+	"net"
+)
 
 func startSocks5Server() (string, int) {
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")

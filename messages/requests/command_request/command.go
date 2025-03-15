@@ -10,6 +10,13 @@ const commandIdPos = 1
 const atypPos = 3
 const dstAddrStartPos = atypPos + 1
 
+// Provides name->int mapping for the SOCKS5 commands, as defined in RFC1928
+const (
+	CONNECT       = 1
+	BIND          = 2
+	UDP_ASSOCIATE = 3
+)
+
 // CommandRequest Represents a request for proxying data, it contains the command type and destination address
 type CommandRequest struct {
 	CMD      uint16

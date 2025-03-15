@@ -24,26 +24,19 @@ func (session *Session) handleCommand() {
 	}
 
 	switch cmd.CMD {
-	case shared.CONNECT:
+	case command_request.CONNECT:
 		session.handleConnectCmd(cmd)
 		return
-	case shared.BIND:
+	case command_request.BIND:
 		session.handleBindCmd(cmd)
 		return
-	case shared.UDP_ASSOCIATE:
+	case command_request.UDP_ASSOCIATE:
 		session.handleUdpAssociateCmd()
 		return
+	default:
+		session.setError(errors.New("unknown command"))
+		return
 	}
-	resp := command_response.CommandResponse{}
-	resp.Status = command_response.CommandNotSupported
-	bytes, err := resp.ToBytes()
-	if err != nil {
-		session.setError(err)
-	}
-	session.conn.Write(bytes)
-	session.setError(errors.New("unsupported command"))
-	return
-
 }
 func (session *Session) handleConnectCmd(cmd command_request.CommandRequest) {
 	proxyErrors := make(chan error)
@@ -90,7 +83,7 @@ func (session *Session) handleBindCmd(cmd command_request.CommandRequest) {
 	if err != nil {
 		session.setError(err)
 	}
-	go proxy.Start(proxyErrors) // for some reason doesn't proxy
+	go proxy.Start(proxyErrors)
 	if err != nil {
 		session.setError(err)
 	}
