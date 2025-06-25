@@ -1,5 +1,3 @@
-*The code below is written in the order I wrote it initally, without any refactoring or improvements*
-
 * Lab 1 - Exploring the protocol
 ** Overview
 The goal of this exercise is to explore the protocol by monitoring the network traffic from client, through proxy server and to mocked TCP/UDP server. In the end we will have a series of pcaps outlining the different SOCKS5 commands. Authentication and traffic rules(i.e. the proxy server allowing/denying certain requests is out of scope.
@@ -468,6 +466,12 @@ Authentication will not be included
 *** Prerequisites
 **** Network setup
 [[./img/lab_3_network_setup.png]]
+**** Starting Dante with host network
+1. Create new config, look at ~dante_conf_host_network.conf~ for example
+2. Start the docker container
+#+BEGIN_SRC
+docker run --net=host -v $(pwd)/dante_conf_host_network.conf:/etc/sockd.conf  wernight/dante
+#+END_SRC
 *** Client states
 #+BEGIN_SRC
 const (
@@ -652,6 +656,7 @@ func (client *Socks5Client) Close() error {
 * Lab 4 - Implemting SOCKS5 Client BIND Command
 ** Overview
 In this lab the client will be extended to support the BIND command
+**NOTE: There is bug in the client(test) implementation, more info about it can be found in the "modifying the test" section in lab 8
 ** Concepts
 *** Connection setup and traffic flow
 :[[./img/lab_4_flow.png]]
@@ -666,6 +671,8 @@ The flow is as follows:
 4.1 The proxy server notifies the client that a connection to the listener was established
 4.2 The proxy server transfers the data(send by the server) to the client
 ** Experiments
+*** Prerequisites
+Same network setup as lab 3
 *** Handling Bind command
 #+BEGIN_SRC
 func (client *Socks5Client) BindRequest(addr string, port uint16) (string, uint16, error) {
@@ -789,7 +796,634 @@ func connectBackToClient(addr string) (*net.TCPConn, error) {
 #+END_SRC
 
 * Lab 5 - Implemting SOCKS5 UDP ASSOCIATE Command
+** Overview
+In this lab the client will be extended to support the UDP ASSOCIATE Command
+** Concepts
+*** UDP Associate command
+Unlike the other commands, this one uses UDP. Before the command is accepted, the socks5 server must start a UDP listener, which will forward the datagram to the desired UDP server.
+Here the client is expected to encapsulate the data in a specific format, before sending it to the proxy server. The encapsulation format was observed in Lab 1.
+** Experiments
+*** Handling UDP Associate command
+#+BEGIN_SRC
+func (client *Socks5Client) UDPAssociateRequest(addr string, port uint16) (string, uint16, error) {
+	if client.state != Authenticated {
+		return "", 0, errors.New("client is not authenticated")
+	}
+
+	err := client.constructAndSendCommand(shared.UDP_ASSOCIATE, addr, shared.ATYP_IPV4, port)
+	if err != nil {
+		client.setError(err)
+		return "", 0, err
+	}
+
+	addrProxy, portProxy, err := client.handleCommandResponse()
+	if err != nil {
+		client.setError(err)
+		return "", 0, err
+	}
+
+	return addrProxy, portProxy, nil
+}
+func (client *Socks5Client) constructAndSendCommand(cmdType uint16, addr string, addrType uint16, port uint16) error {
+	req, err := constructCommand(cmdType, addr, addrType, port)
+	if err != nil {
+		return err
+	}
+
+	_, err = client.tcpConn.Write(req)
+	if err != nil {
+		return err
+	}
+
+	client.setState(CommandRequested)
+	return nil
+}
+// Usage
+//....
+  srvIp, srvPort, err := client.UDPAssociateRequest("0.0.0.0", 0)
+	if err != nil {
+		t.Fatalf("Failed sending UDP associate request. Reason %v", err)
+	}
+// connect to UDP listener of the proxy
+	udpAddrStr := fmt.Sprintf("%s:%d", srvIp, srvPort)
+	udpAddr, err := net.ResolveUDPAddr("udp", udpAddrStr)
+	conn, err := net.DialUDP("udp", nil, udpAddr)
+	if err != nil {
+		t.Fatalf("Failed connecting to UDP. Reason %v", err)
+	}
+	defer conn.Close()
+// encapsulate data and conn. info for the server
+	msg := udp.UDPDatagram{}
+	msg.Frag = 0
+	msg.DST_ADDR = shared.DstAddr{Value: addr, Type: shared.ATYP_IPV4}
+	msg.DST_PORT = uint16(port)
+	msg.DATA = []byte(dataSendToUDPEcho)
+	data, err := msg.ToBytes()
+	if err != nil {
+		t.Fatalf("Failed converting message to bytes. Reason %v", err)
+	}
+	conn.Write(data)
+// read response of the datagram
+	buf := make([]byte, 1024)
+	n, err := conn.Read(buf)
+	if err != nil {
+		t.Fatalf("Failed reading from UDP. Reason %v", err)
+	}
+// deserialize and access the response
+	response := udp.UDPDatagram{}
+	err = response.Deserialize(buf[:n])
+	if err != nil {
+		t.Fatalf("Failed reading from UDP. Reason %v", err)
+	}
+	if string(response.DATA) != dataSendToUDPEcho {
+		t.Fatalf("Response doesn't match send data. expected %v got %v", response.DATA, dataSendToUDPEcho)
+	}
+
+#+END_SRC
+*** Mock UDP Server
+#+BEGIN_SRC
+
+func UdpEchoServer() (string, uint16) {
+	addr, err := net.ResolveUDPAddr("udp", "127.0.0.1:9999") // Probably not a terrible idea to randomly pick address 
+	if err != nil {
+		panic(err)
+	}
+	conn, err := net.ListenUDP("udp", addr)
+
+	go func() {
+		for {
+			buf := make([]byte, 1024)
+			n, addr, err := conn.ReadFromUDP(buf[0:])
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+
+			conn.WriteToUDP(buf[0:n], addr)
+		}
+	}()
+	srvAddr := addr.IP.String()
+	srvPort := addr.Port
+	return srvAddr, uint16(srvPort)
+}
+#+END_SRC
+
 * Lab 6 - Implementing SOCKS5 Server CONNECT Command
+The goal is to use the test written in Lab 3, but instant of connecting to Dante to connect to a server written in Golang
+** Experiments
+*** Setting up listener and session handler
+#+BEGIN_SRC
+type SessionState uint16
+
+const PendingAuthMethods SessionState = 10
+const Authenticated SessionState = 20
+const Proxying SessionState = 30
+
+type Session struct {
+	state SessionState
+	conn  net.Conn
+	err   error
+}
+
+func Start(listener net.Listener) {
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Fatal(err)
+		}
+		session := Session{state: PendingAuthMethods, conn: conn}
+		go session.handler()
+	}
+}
+
+func (session *Session) handler() {
+	for {
+		switch session.state {
+		case PendingAuthMethods:
+			session.handleAuth()
+		case Authenticated:
+			session.handleCmd()
+		case Proxying:
+			return
+		}
+	}
+}
+#+END_SRC
+*** Handling authentication
+#+BEGIN_SRC
+func (session *Session) handleAuth() {
+	authMethodCandidate := make([]byte, 1024)
+	n, err := session.conn.Read(authMethodCandidate)
+	if err != nil {
+		log.Fatal(err)
+	}
+	authMethods := available_auth_methods.AvailableAuthMethods{}
+	err = authMethods.Deserialize(authMethodCandidate[:n])
+	if err != nil {
+		session.setError(err)
+	}
+	msg := accept_auth_method.AcceptAuthMethod{}
+	if slices.Contains(authMethods.Methods(), shared.NoAuthRequired) {
+		err := msg.SetMethod(shared.NoAuthRequired)
+		if err != nil {
+			session.setError(err)
+		}
+	}
+	err = msg.SetMethod(shared.NoAcceptableMethods)
+	if err != nil {
+		session.setError(err)
+	}
+	session.conn.Write(msg.ToBytes())
+	session.state = Authenticated
+}
+#+END_SRC
+*** Handling CONNECT command
+#+BEGIN_SRC
+func (session *Session) handleCmd() {
+	commandCandidate := make([]byte, 1024)
+	n, err := session.conn.Read(commandCandidate)
+	if err != nil {
+               session.setError(err)
+        }
+
+	cmd := command_request.CommandRequest{}
+	err = cmd.Deserialize(commandCandidate[:n])
+	if err != nil {
+		session.setError(err)
+	}
+
+	switch cmd.CMD {
+	case shared.CONNECT:
+		session.handleConnectCmd(cmd)
+		return
+	}
+// the command is not supported, so we return such message
+	resp := command_response.CommandResponse{}
+	resp.Status = command_response.CommandNotSupported
+	bytes, err := resp.ToBytes()
+	if err != nil {
+		session.setError(err)
+	}
+	session.conn.Write(bytes)
+	session.setError(errors.New("unsupported command"))
+	return
+
+}
+
+func (session *Session) handleConnectCmd(cmd command_request.CommandRequest) {
+	proxyErrors := make(chan error)
+	remoteAddr := fmt.Sprintf("%s:%d", cmd.DST_ADDR.Value, cmd.DST_PORT)
+	proxy, err := proxies.NewConnectProxy(remoteAddr, session.conn)
+	if err != nil {
+		session.setError(err)
+	}
+	go proxy.Start(proxyErrors) 
+	if err != nil {
+		session.setError(err)
+	}
+	go session.proxyErrorHandler(proxyErrors, proxy)
+
+	resp := command_response.CommandResponse{}
+	resp.Status = command_response.Success
+	resp.BND_PORT = 0
+	resp.BND_ADDR = shared.DstAddr{Value: "0.0.0.0", Type: shared.ATYP_IPV4}
+	bytes, _ := resp.ToBytes()
+	session.conn.Write(bytes)
+	session.state = Proxying
+}
+
+func (session *Session) proxyErrorHandler(errors chan error, proxy proxies.Proxy) {
+	err := <-errors
+	session.setError(err)
+	proxy.Stop()
+}
+#+END_SRC
+*** Simple TCP Proxy
+#+BEGIN_CMD
+package proxies
+
+import "io"
+
+type Proxy interface {
+	Start(errors chan error) error
+	Stop()
+}
+// https://www.youtube.com/watch?v=J4J-A9tcjcA
+func SpliceConnections(client io.ReadWriter, server io.ReadWriter, errors chan error) {
+	go func() {
+		_, err := io.Copy(server, client)
+		if err != nil {
+			errors <- err
+		}
+	}()
+	_, err := io.Copy(client, server)
+	if err != nil {
+		errors <- err
+	}
+}
+
+
+// TCP proxy as we will have other types as well
+package proxies
+
+import (
+	"io"
+	"net"
+	"time"
+)
+
+type TCPProxy struct {
+	server io.ReadWriteCloser
+	client io.ReadWriteCloser
+}
+
+func NewConnectProxy(addr string, client io.ReadWriteCloser) (*TCPProxy, error) {
+	server, err := net.DialTimeout("tcp", addr, time.Duration(1)*time.Second)
+	if err != nil {
+		return nil, err
+	}
+
+	return &TCPProxy{server: server, client: client}, nil
+}
+
+func (proxy *TCPProxy) Start(errors chan error) error {
+	SpliceConnections(proxy.server, proxy.client, errors)
+	return nil
+}
+
+func (proxy *TCPProxy) Stop() {
+	proxy.server.Close()
+	proxy.client.Close()
+}
+
+
+#+END_CMD
+*** Modifying the test
+#+BEGIN_SRC
+
+func Test_Client_Connect(t *testing.T) {
+	ctx, _ := context.WithTimeout(context.Background(), time.Second*50)
+	proxyAddr, proxyPort := startSocks5Server()
+	socks5SrvAddr := fmt.Sprintf("%s:%d", proxyAddr, proxyPort)
+// ..... Not different than the one from lab 3
+}
+
+func startSocks5Server() (string, int) {
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		panic(err)
+	}
+	//	srv := Socks5Server{Listener: listener}
+	go Start(listener)
+	addr := listener.Addr().(*net.TCPAddr).IP.String()
+	port := listener.Addr().(*net.TCPAddr).Port
+	return addr, port
+}
+#+END_SRC
+
 * Lab 7 - Implementing SOCKS5 Server BIND Command
+** Experiments
+*** Handling BIND command
+#+BEGIN_SRC
+func (session *Session) handleCmd() {
+	commandCandidate := make([]byte, 1024)
+	n, err := session.conn.Read(commandCandidate)
+// .............
+
+	switch cmd.CMD {
+// .............
+	case shared.BIND:
+		session.handleBindCmd(cmd)
+		return
+// .............
+}
+func (session *Session) handleBindCmd(cmd command_request.CommandRequest) {
+	proxyErrors := make(chan error)
+	remoteAddr := fmt.Sprintf("%s:%d", cmd.DST_ADDR.Value, cmd.DST_PORT)
+	proxy, err := proxies.NewBindProxy(session.conn, remoteAddr)
+	if err != nil {
+		session.setError(err)
+	}
+	go proxy.Start(proxyErrors) // for some reason doesn't proxy
+	if err != nil {
+		session.setError(err)
+	}
+	go session.proxyErrorHandler(proxyErrors, proxy)
+
+	resp := command_response.CommandResponse{}
+	resp.Status = command_response.Success
+	resp.BND_PORT = proxy.ListeningPort
+	resp.BND_ADDR = shared.DstAddr{Value: proxy.ListeningIp, Type: shared.ATYP_IPV4}
+	bytes, _ := resp.ToBytes()
+	session.conn.Write(bytes)
+	session.state = Proxying
+}
+
+#+END_SRC
+*** Bind Proxy
+#+BEGIN_SRC
+package proxies
+
+import (
+	"io"
+	"net"
+	"socks5_server/messages/responses/command_response"
+	"socks5_server/messages/shared"
+)
+
+type BindProxy struct {
+	server        net.Listener
+	client        io.ReadWriteCloser
+	ListeningPort uint16
+	ListeningIp   string
+}
+
+func NewBindProxy(client io.ReadWriteCloser, addr string) (*BindProxy, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:8877")
+	if err != nil {
+		return nil, err
+	}
+
+	return &BindProxy{client: client, server: listener, ListeningPort: 8877, ListeningIp: "127.0.0.1"}, nil
+}
+func (proxy *BindProxy) Start(errors chan error) error {
+	go func() {
+		in, err := proxy.server.Accept()
+		if err != nil {
+			errors <- err
+			return
+		}
+
+		err = proxy.notifyClientAboutIncomingConnection(in)
+		if err != nil {
+			errors <- err
+			return
+		}
+
+		SpliceConnections(in, proxy.client, errors)
+	}()
+
+	return nil
+}
+
+func (proxy *BindProxy) Stop() {
+	proxy.server.Close()
+	proxy.client.Close()
+}
+func (proxy *BindProxy) notifyClientAboutIncomingConnection(in net.Conn) error {
+	addr := in.RemoteAddr().(*net.TCPAddr).IP.String()
+	port := in.RemoteAddr().(*net.TCPAddr).Port
+	reqSourceMsg := command_response.CommandResponse{Status: command_response.Success, BND_ADDR: shared.DstAddr{Value: addr, Type: shared.ATYP_IPV4}, BND_PORT: uint16(port)}
+
+	bytes, err := reqSourceMsg.ToBytes()
+	_, err = proxy.client.Write(bytes)
+
+	return err
+}
+
+#+END_SRC
+*** Modifying the test
+#+BEGIN_SRC
+func Test_Client_Bind(t *testing.T) { 
+	ctx, _ := context.WithTimeout(context.Background(), time.Second*60)
+	proxyAddr, proxyPort := startSocks5Server()
+	socks5SrvAddr := fmt.Sprintf("%s:%d", proxyAddr, proxyPort)
+	var serverConnectedWithPort uint16 // this variable is altered by the BindServer to indicate which local port is being used for the server->proxy->client connection
+	addr, port := sockstests.BindServer(serverRequestResponse, serverResponse, &serverConnectedWithPort)
+// ................
+  
+        // Read actual data
+	//// NOTE: Sometimes, the response from the successful connection and the data its self come in the same read operation
+	//// Because there is no way to differentiate between them specified in the RFC, the simplest yet reliable way I found is to check if
+	//// the message was the whole buffer, if not then at least part of the data arrived with the socks5 message.
+	//// this is happening only with the golang server implementation and not with Dante or at least didn't happen during the 100 times I executed this test against Dante
+	respLength, _ := msg.ToBytes()
+	if n > len(respLength) {
+		if string(buf2[len(respLength):n]) != serverResponse {
+			t.Fatalf("Expected server to send with TEST, got %v", string(buf2[len(respLength):n]))
+		}
+		return
+	}
+	n, err = rwBind.Read(buf2)
+	if string(buf2[:n]) != serverResponse {
+		t.Fatalf("Expected server to send with TEST, got %v", string(buf2[:n]))
+	}
+	bindClient.Close()
+}
+#+END_SRC
 * Lab 8 - Implementing SOCKS5 Server UDP ASSOCIATE Command
-* Lab 9 - Refactoring SOCKS5 to support username/password authentication method
+** Experiments
+*** Handling UDP ASSOCIATE command
+#+BEGIN_SRC
+func (session *Session) handleCmd() {
+// .................
+        switch cmd.CMD {
+	case shared.CONNECT:
+		session.handleConnectCmd(cmd)
+		return
+	case shared.BIND:
+		session.handleBindCmd(cmd)
+		return
+	case shared.UDP_ASSOCIATE:
+		session.handleUdpAssociateCmd(cmd)
+		return
+	}
+// ...............
+func (session *Session) handleUdpAssociateCmd() {
+	proxyErrors := make(chan error)
+	proxy, err := proxies.NewUDPProxy()
+	if err != nil {
+		return
+	}
+	go proxy.Start(proxyErrors)
+
+	resp := command_response.CommandResponse{}
+	resp.Status = command_response.Success
+	resp.BND_PORT = proxy.Port
+	resp.BND_ADDR = shared.DstAddr{Value: session.conn.LocalAddr().(*net.TCPAddr).IP.String(), Type: shared.ATYP_IPV4}
+	bytes, _ := resp.ToBytes()
+	session.conn.Write(bytes)
+	session.state = Proxying
+	go session.proxyErrorHandler(proxyErrors, proxy)
+}
+}
+#+END_SRC
+*** UDP Proxy
+#+BEGIN_SRC
+package proxies
+
+import (
+	"fmt"
+	"net"
+	"socks5_server/messages/encapsulation/udp"
+)
+
+type UDPProxy struct {
+	server *net.UDPConn
+	Port   uint16
+	Addr   string
+}
+
+func NewUDPProxy() (*UDPProxy, error) {
+	udpServer, err := startUdpListener()
+	if err != nil {
+		return nil, err
+	}
+
+	port := uint16(udpServer.LocalAddr().(*net.UDPAddr).Port)
+	addr := udpServer.LocalAddr().String()
+
+	return &UDPProxy{server: udpServer, Port: port, Addr: addr}, nil
+}
+
+func (proxy *UDPProxy) Start(errors chan error) error {
+	go func() {
+		for {
+			addrClient, dgram, err := proxy.receiveRequest()
+			if err != nil {
+				errors <- err
+				return
+
+			}
+			responseData, err := sendToRemote(dgram.DATA, concatIpAndPort(dgram.DST_ADDR.Value, dgram.DST_PORT))
+			if err != nil {
+				errors <- err
+				return
+			}
+
+			respDgram := encapsulateResponse(dgram, responseData)
+			resp, err := respDgram.ToBytes()
+			if err != nil {
+				errors <- err
+				return
+			}
+
+			_, err = proxy.server.WriteToUDP(resp, addrClient)
+			if err != nil {
+				errors <- err
+				return
+			}
+		}
+	}()
+	return nil
+}
+
+func (proxy *UDPProxy) Stop() {
+	proxy.server.Close()
+}
+
+func sendToRemote(data []byte, addr string) ([]byte, error) {
+	udpAddrSrv, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := net.DialUDP("udp", nil, udpAddrSrv)
+	if err != nil {
+		return nil, err
+	}
+
+	n, err := conn.Write(data)
+	if err != nil {
+		return nil, err
+	}
+
+	buf := make([]byte, 1024)
+	n, err = conn.Read(buf)
+	if err != nil {
+		return nil, err
+	}
+
+	return buf[:n], nil
+}
+
+func (proxy *UDPProxy) receiveRequest() (*net.UDPAddr, *udp.UDPDatagram, error) {
+	var buf = make([]byte, 65535) // max udp?
+	n, addrClient, err := proxy.server.ReadFromUDP(buf)
+	if err != nil {
+		return nil, nil, err
+	}
+	dgram := udp.UDPDatagram{}
+	err = dgram.Deserialize(buf[:n])
+	if err != nil {
+		return nil, nil, err
+	}
+	return addrClient, &dgram, nil
+}
+
+func encapsulateResponse(requestDatagram *udp.UDPDatagram, data []byte) *udp.UDPDatagram {
+	respDgram := udp.UDPDatagram{}
+	respDgram.DST_ADDR = requestDatagram.DST_ADDR
+	respDgram.DST_PORT = requestDatagram.DST_PORT
+	respDgram.Frag = requestDatagram.Frag
+	respDgram.DATA = data
+	return &respDgram
+}
+
+func concatIpAndPort(addr string, port uint16) string {
+	return fmt.Sprintf("%s:%d", addr, port)
+}
+
+func startUdpListener() (*net.UDPConn, error) {
+	udpAddr, err := net.ResolveUDPAddr("udp4", "0.0.0.0:0")
+	if err != nil {
+		return nil, err
+	}
+	udpServer, err := net.ListenUDP("udp4", udpAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	return udpServer, nil
+}
+
+#+END_SRC
+*** Modifying the test
+#+BEGIN_SRC
+
+func Test_Client_UDP_Associate(t *testing.T) {
+	ctx, _ := context.WithTimeout(context.Background(), time.Second*50)
+	proxyAddr, proxyPort := startSocks5Server()
+	socks5SrvAddr := fmt.Sprintf("%s:%d", proxyAddr, proxyPort)
+// ......................
+}
+#+END_SRC
