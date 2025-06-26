@@ -31,12 +31,20 @@ The data transmitted over a network rarely matches the data in memory, because o
 ### Message implementation standard overview
 In order for the implementation to be successful:
 
-1. It must implement the Message interface, by implementing the ToBytes and Deserialize methods.
+1. It must implement the Message interface, by implementing the `ToBytes` and `Deserialize` methods.
 2. It must be tested that it returns error if the VER field is incorrect, or the auth methods are invalid(e.g. the number is not assigned by IANA)
 3. It must have tests for benchmarking the ToBytes and Deserialize methods.
 4. It must be fuzz-tested, interesting scenarios must be added to the fuzzing function, if any. Fuzzing for a few seconds(30) should be enough.
 5. The “happy paths” must be covered by unit tests
 6. Each file must contain information about the message, at the very least the message format, quoted from the results from Lab-1
+
+The message interface is defined as follows:
+```go
+type Socks5Message interface {
+	ToByte() ([]byte, error)
+	Deserialize([]byte) error
+}
+```
 
 In the next section, the implementation for the first message exchanged by the protocol (available authentication methods) will be implemented
 ## Example - Implementing the Message interface for "available authentication methods" message
