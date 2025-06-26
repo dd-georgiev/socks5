@@ -222,7 +222,7 @@ $ ./wirez run -F 127.0.0.1:1080 -- nc -u 148.113.191.22 8888
 #+END_SRC
 
 **** Analyzing the traffic
-*Note: The UDP request to the server doesn't contain any socks5 specific encapsulatin
+*Note: The UDP request to the server doesn't contain any socks5 specific encapsulation
 1. ~UDP_ASSOCIATE~ command request
 #+BEGIN_SRC
 Transmission Control Protocol, Src Port: 39302, Dst Port: 1080, Seq: 4, Ack: 3, Len: 10
@@ -255,7 +255,7 @@ Data (15 bytes)
     [Length: 15]
 
 #+END_SRC
-4. Transfering server response to client via proxy
+4. Transferring server response to client via proxy
 #+BEGIN_SRC
 User Datagram Protocol, Src Port: 36277, Dst Port: 33010
 Data (15 bytes)
@@ -351,7 +351,7 @@ is mutating the structure. The ~ToBytes~ is returning a byte array, without modi
 The ~struct~ looks like this:
 #+BEGIN_SRC
 type AvailableAuthMethods struct {
-	methods []uint16 // note that this field is privated
+	methods []uint16 // note that this field is private
 }
 
 // Getter
@@ -437,7 +437,7 @@ func TestAvailableAuthMethods_Deserialize_Single_Method(t *testing.T) {
 #+BEGIN_SRC
 
 func FuzzAvailableAuthMethods_DeserializeDeserialized(f *testing.F) {
-	f.Add([]byte{}) // this is how one adds specific confition
+	f.Add([]byte{}) // this is how one adds specific condition
 	f.Add([]byte{0x00, 0x05, 0x01}) // in case the size of the methods doesn't match the actual size send
 	f.Fuzz(func(t *testing.T, data []byte) {
 		msg := AvailableAuthMethods{}
@@ -653,10 +653,9 @@ func (client *Socks5Client) Close() error {
 	return client.tcpConn.Close()
 }
 #+END_SRC
-* Lab 4 - Implemting SOCKS5 Client BIND Command
+* Lab 4 - Implementing SOCKS5 Client BIND Command
 ** Overview
 In this lab the client will be extended to support the BIND command
-**NOTE: There is bug in the client(test) implementation, more info about it can be found in the "modifying the test" section in lab 8
 ** Concepts
 *** Connection setup and traffic flow
 :[[./img/lab_4_flow.png]]
@@ -795,7 +794,7 @@ func connectBackToClient(addr string) (*net.TCPConn, error) {
 
 #+END_SRC
 
-* Lab 5 - Implemting SOCKS5 UDP ASSOCIATE Command
+* Lab 5 - Implementing SOCKS5 UDP ASSOCIATE Command
 ** Overview
 In this lab the client will be extended to support the UDP ASSOCIATE Command
 ** Concepts
