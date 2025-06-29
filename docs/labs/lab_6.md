@@ -151,6 +151,23 @@ func (session *Session) proxyErrorHandler(errors chan error, proxy proxies.Proxy
 ```
 ### Simple TCP Proxy
 NOTE: The following video goes indepth about the code below. [https://www.youtube.com/watch?v=J4J-A9tcjcA](https://www.youtube.com/watch?v=J4J-A9tcjcA)
+#### Splicing two io.ReadWriter
+Splicing means joining two things together. In this context, we basically start sending the data from one `ReadWriter` to the other and vice-versa
+```go
+func SpliceConnections(client io.ReadWriter, server io.ReadWriter, errors chan error) {
+	go func() {
+		_, err := io.Copy(server, cli`ent)
+		if err != nil {
+			errors <- err
+		}
+	}()
+	_, err := io.Copy(client, server)
+	if err != nil {
+		errors <- err
+	}
+}
+```
+#### TCP proxy
 ```go
 type TCPProxy struct {
 	server io.ReadWriteCloser
