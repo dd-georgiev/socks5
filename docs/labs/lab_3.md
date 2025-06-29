@@ -1,3 +1,17 @@
+- [Lab 3 - Implementing SOCKS5 Client CONNECT Command](#lab-3---implementing-socks5-client-connect-command)
+    * [Overview](#overview)
+    * [Experiments](#experiments)
+        + [Prerequisites](#prerequisites)
+            - [Network setup](#network-setup)
+            - [Starting Dante in host network](#starting-dante-in-host-network)
+        + [Implementing client states](#implementing-client-states)
+        + [Handling authentication](#handling-authentication)
+        + [Handling Connect command](#handling-connect-command)
+        + [Sending and receiving data via the proxy server](#sending-and-receiving-data-via-the-proxy-server)
+        + [Test(stitching all the functionality above)](#test-stitching-all-the-functionality-above-)
+
+<small><i><a href='http://ecotrust-canada.github.io/markdown-toc/'>Table of contents generated with markdown-toc</a></i></small>
+
 # Lab 3 - Implementing SOCKS5 Client CONNECT Command
 ## Overview
 The goal here is to implement a client using the `messages` developed in Lab 2, which will connect to Dante and send request to mock TCP server(via the proxy server). Authentication will not be included.
