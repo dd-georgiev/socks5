@@ -1,3 +1,13 @@
+- [Lab 5 - Implementing SOCKS5 UDP ASSOCIATE Command](#lab-5---implementing-socks5-udp-associate-command)
+    * [Overview](#overview)
+    * [Concepts](#concepts)
+        + [UDP Associate command](#udp-associate-command)
+    * [Experiments](#experiments)
+        + [Handling UDP Associate command](#handling-udp-associate-command)
+        + [Mock UDP Server](#mock-udp-server)
+        + [Test](#test)
+
+<small><i><a href='http://ecotrust-canada.github.io/markdown-toc/'>Table of contents generated with markdown-toc</a></i></small>
 # Lab 5 - Implementing SOCKS5 UDP ASSOCIATE Command
 ## Overview
 In this lab the client will be extended to support the UDP ASSOCIATE Command
