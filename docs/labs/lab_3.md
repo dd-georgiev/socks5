@@ -192,12 +192,38 @@ func (client *Socks5Client) Close() error {
 	return client.tcpConn.Close()
 }
 ```
+### Mock server
+```go
+// basic tcp echo server you send "test" you receive "test" back
+func TcpEchoServer() (string, uint16) {
+	srv, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		panic(err)
+	}
 
+	go func() {
+		client, err := srv.Accept()
+		if err != nil {
+			panic(err)
+		}
+		buf := make([]byte, 1024)
+		n, err := client.Read(buf)
+		if err != nil {
+			panic(err)
+		}
+		client.Write(buf[:n])
+		client.Close()
+	}()
+	addr := srv.Addr().(*net.TCPAddr).IP.String()
+	port := srv.Addr().(*net.TCPAddr).Port
+	return addr, uint16(port)
+}
+```
 ### Test(stitching all the functionality above)
 ```go
 func Test_Client_Connect(t *testing.T) {
 	ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
-	addr, port := sockstests.TcpEchoServer() // basic tcp echo server you send "test" you receive "test" back
+	addr, port := sockstests.TcpEchoServer() 
 	client, err := NewSocks5Client(ctx, "127.0.0.1:1080")
 	if err != nil {
 		t.Fatal("Failed connecting to Dante")
